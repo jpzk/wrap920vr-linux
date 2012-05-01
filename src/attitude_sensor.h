@@ -138,48 +138,48 @@ float normalize_value(
     int16_t *value);
 	
 IWRSENSOR_PARSED_F normalize_sensor(
-    IWRSENSOR_PARSED *calibMin,  
-    IWRSENSOR_PARSED *calibMax, 
+    IWRSENSOR_PARSED *calib_min,  
+    IWRSENSOR_PARSED *calib_max, 
     IWRSENSOR_PARSED *sensor);
 	
 IWRSENSOR_PARSED normalize_gyro(
-    IWRSENSOR_PARSED *biasGyro, 
-    IWRSENSOR_PARSED *sensor );
+    IWRSENSOR_PARSED *bias_gyro, 
+    IWRSENSOR_PARSED *sensor);
 
 ANGLES calculate_angles( 
-    ANGLES *currentAngles,		
-    IWRSENSOR_PARSED_F *normalizedMagSensorData, 
-    IWRSENSOR_PARSED_F *normalizedAccSensorData,
-    IWRSENSOR_PARSED *normalizedGyrSensorData, 
-    ANGLES *currentGyro, 
-    RINGBUFFER *ringbufferAccPitch, 
-    RINGBUFFER *ringbufferAccRoll, 
-    float *currentAccPitch,
-    float *currentAccRoll);
+    ANGLES *current_angles,		
+    IWRSENSOR_PARSED_F *normalized_mag_sensor_data, 
+    IWRSENSOR_PARSED_F *normalized_acc_sensor_data,
+    IWRSENSOR_PARSED *normalized_gyr_sensor_data, 
+    ANGLES *current_gyro, 
+    RINGBUFFER *ringbuffer_acc_pitch, 
+    RINGBUFFER *ringbuffer_acc_roll, 
+    float *current_acc_pitch,
+    float *current_acc_roll);
 	
 float calculate_pitch(
-    float *currentPitch,		
-    IWRSENSOR_PARSED_F *normalizedAccSensorData, 
-    IWRSENSOR_PARSED *normalizedGyrSensorData, 
-    ANGLES *currentGyro, 
-    RINGBUFFER *ringbufferAccPitch, 
-    float *currentAccPitch);
+    float *current_pitch,		
+    IWRSENSOR_PARSED_F *normalized_acc_sensor_data, 
+    IWRSENSOR_PARSED *normalized_gyr_sensor_data, 
+    ANGLES *current_gyro, 
+    RINGBUFFER *ringbuffer_acc_pitch, 
+    float *current_acc_pitch);
 
 float calculate_roll(
-    float *currentRoll,		
-    IWRSENSOR_PARSED_F *normalizedAccSensorData, 
-    IWRSENSOR_PARSED *normalizedGyrSensorData, 
-    ANGLES *currentGyro, 
-    RINGBUFFER *ringbufferAccRoll, 
-    float *currentAccRoll);
+    float *current_roll,		
+    IWRSENSOR_PARSED_F *normalized_acc_sensor_data, 
+    IWRSENSOR_PARSED *normalized_gyr_sensor_data, 
+    ANGLES *current_gyro, 
+    RINGBUFFER *ringbuffer_acc_roll, 
+    float *current_acc_roll);
 	
 float calculate_yaw(
-    IWRSENSOR_PARSED_F *normalizedMagSensorData, 
-    IWRSENSOR_PARSED *normalizedGyrSensorData, 
-    ANGLES *currentGyro,
-    float *currentYaw,
-    float *currentPitch,
-    float *currentRoll);
+    IWRSENSOR_PARSED_F *normalized_mag_sensor_data, 
+    IWRSENSOR_PARSED *normalized_gyr_sensor_data, 
+    ANGLES *current_gyro,
+    float *current_yaw,
+    float *current_pitch,
+    float *current_roll);
 
 float geometric_distribution(float p, int k);
 
