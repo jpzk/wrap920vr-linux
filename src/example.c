@@ -27,29 +27,8 @@ of the authors and should not be interpreted as representing official policies,
 either expressed or implied, of the FreeBSD Project.
 */
 
-#include "../Logger.h" 
-#include "../AttitudeSensor.h"
-#include <stdio.h>
-#include <iostream>
+#include <stdlib.h>
 
-AttitudeSensor * as;
-const Head * head;
-bool run=true;
-
-int main(){
-	as = new AttitudeSensor();
-	if(as->vuzixConnected){
-		while(run){
-			if(!as->vuzixConnected){
-				run=false;
-				break;
-			}
-			as->timerProc();
-			head=as->getHeadDirection();
-			std::cout<<"yaw: "<<head->angles.yawDeg<<std::endl;
-			std::cout<<"pitch: "<<head->angles.pitchDeg<<std::endl;
-			std::cout<<"roll: "<<head->angles.rollDeg<<std::endl;
-			usleep(5000); //5 millis
-		}
-	}
+int main() {
+    return(0);
 }

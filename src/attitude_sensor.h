@@ -27,6 +27,9 @@ of the authors and should not be interpreted as representing official policies,
 either expressed or implied, of the FreeBSD Project.
 */
 
+#ifndef _ATTITUDE_SENSOR_H
+#define _ATTITUDE_SENSOR_H
+
 #include <stdlib.h>
 #include <stdint.h>
 
@@ -36,10 +39,9 @@ either expressed or implied, of the FreeBSD Project.
 #define ATTITUDE_SENSOR_BUFFERSIZE 26
 #define ATTITUDE_SENSOR_RINGBUFFER_SIZE 10 
 #define ATTITUDE_SENSOR_GEOMETRIC_PROBABILITY 0.5
+#define ATTITUDE_SENSOR_CONFIG_FILE "attitudesensor.conf"
 
 #define LOG(string, args...) printf (string"\n", ##args)
-
-using namespace std;
 
 typedef struct tag_HEAD_DIRECTION {
 	float yawDeg;
@@ -77,99 +79,108 @@ typedef struct tag_RINGBUFFER {
 } RINGBUFFER;
 
 typedef struct tag_ATTITUDE_SENSOR {
-    bool useYaw, usePitch, useRoll;
-    float currentAccPitch;
-	float currentAccRoll;
-    int fileDevice, bytesRead;
+    bool use_yaw, use_pitch, use_roll;
+    float current_acc_pitch;
+	float current_acc_roll;
+    int file_device, bytes_read;
 	unsigned char buf[28]; //TODO magic
 
 	HEAD_DIRECTION head_direction;
-    static bool vuzixConnected;
+    static bool vuzix_connected;
 	
     IWRSENSDATA sensdata;
 	IWRSENSDATA_PARSED parsed;
-	IWRSENSOR_PARSED calibMagMin;
-	IWRSENSOR_PARSED calibMagMax;
-	IWRSENSOR_PARSED calibAccMin;
-	IWRSENSOR_PARSED calibAccMax;
-	IWRSENSOR_PARSED biasGyro;
+	IWRSENSOR_PARSED calib_mag_min;
+	IWRSENSOR_PARSED calib_mag_max;
+	IWRSENSOR_PARSED calib_acc_min;
+	IWRSENSOR_PARSED calib_acc_max;
+	IWRSENSOR_PARSED bias_gyro;
 
-	ANGLES zeroAngles;
-	ANGLES currentGyro;
-	ANGLES currentAcc;
-	ANGLES currentAngles;
+	ANGLES zero_angles;
+	ANGLES current_gyro;
+	ANGLES current_acc;
+	ANGLES current_angles;
 
-	RINGBUFFER ringbufferAccPitch;
-	RINGBUFFER ringbufferAccRoll;		
+	RINGBUFFER ringbuffer_acc_pitch;
+	RINGBUFFER ringbuffer_acc_roll;		
 } ATTITUDE_SENSOR;
 
-    ATTITUDE_SENSOR * attitude_sensor_new();
-    void attitude_sensor_delete();
-    void timer_proc(ATTITUDE_SENSOR &self );
-	void reset_headDirection(ATTITUDE_SENSOR &self);
-	const HEAD_DIRECTION* getHeadDirection(ATTITUDE_SENSOR &self); 
+/**
+ * ATTITUDE_SENSOR methods 
+ */
+ATTITUDE_SENSOR *attitude_sensor_new();
+void attitude_sensor_delete(ATTITUDE_SENSOR *self);
 
-	void toggle_use_yaw(ATTITUDE_SENSOR &self);
-	void toggle_use_pitch(ATTITUDE_SENSOR &self);
-	void toggle_use_roll(ATTITUDE_SENSOR &self);
+void attitude_sensor_timer_proc(ATTITUDE_SENSOR *self);
+void attitude_sensor_reset_head(ATTITUDE_SENSOR *self);
+void attitude_sensor_get_head(ATTITUDE_SENSOR *self);
 
-    void read_configuration(ATTITUDE_SENSOR &self, const char * configFile);
-    void write_configuration(ATTITUDE_SENSOR &self);
+void attitude_sensor_toggle_use_yaw(ATTITUDE_SENSOR *self);
+void attitude_sensor_toggle_use_pitch(ATTITUDE_SENSOR *self);
+void attitude_sensor_toggle_use_roll(ATTITUDE_SENSOR *self);
 
-	float normalize_value(
-        int16_t &min, 
-        int16_t &max,  
-        int16_t &value);
+void attitude_sensor_read_config(ATTITUDE_SENSOR *self, const char *config);
+void attitude_sensor_write_config(ATTITUDE_SENSOR *self);
+
+void attitude_sensor_estimate_gyro_bias(ATTITUDE_SENSOR *self);
+void attitude_calibrate(ATTITUDE_SENSOR *self);
+void attitude_receive(ATTITUDE_SENSOR *self);
+
+IWRSENSDATA_PARSED attitude_sensor_parse_data(ATTITUDE_SENSOR *self);
+
+/**
+ * Helper static methods 
+ */
+
+float normalize_value(
+    int16_t *min, 
+    int16_t *max,  
+    int16_t *value);
 	
-	IWRSENSOR_PARSED_F normalize_sensor(
-        IWRSENSOR_PARSED &calibMin,  
-	    IWRSENSOR_PARSED &calibMax, 
-        IWRSENSOR_PARSED &sensor);
+IWRSENSOR_PARSED_F normalize_sensor(
+    IWRSENSOR_PARSED *calibMin,  
+	IWRSENSOR_PARSED *calibMax, 
+    IWRSENSOR_PARSED *sensor);
 	
-	IWRSENSOR_PARSED normalize_gyro(
-        IWRSENSOR_PARSED &biasGyro, 
-	    IWRSENSOR_PARSED &sensor );
+IWRSENSOR_PARSED normalize_gyro(
+    IWRSENSOR_PARSED *biasGyro, 
+    IWRSENSOR_PARSED *sensor );
+
+ANGLES calculate_angles( 
+    ANGLES *currentAngles,		
+	IWRSENSOR_PARSED_F *normalizedMagSensorData, 
+	IWRSENSOR_PARSED_F *normalizedAccSensorData,
+	IWRSENSOR_PARSED *normalizedGyrSensorData, 
+	ANGLES *currentGyro, 
+	RINGBUFFER *ringbufferAccPitch, 
+	RINGBUFFER *ringbufferAccRoll, 
+	float *currentAccPitch,
+	float *currentAccRoll);
 	
-	ANGLES calculate_angles( 
-		ANGLES & currentAngles,		
-		IWRSENSOR_PARSED_F &normalizedMagSensorData, 
-		IWRSENSOR_PARSED_F &normalizedAccSensorData,
-		IWRSENSOR_PARSED &normalizedGyrSensorData, 
-		ANGLES &currentGyro, 
-		RINGBUFFER &ringbufferAccPitch, 
-		RINGBUFFER &ringbufferAccRoll, 
-		float &currentAccPitch,
-		float &currentAccRoll);
+float calculate_pitch(
+    float *currentPitch,		
+    IWRSENSOR_PARSED_F *normalizedAccSensorData, 
+    IWRSENSOR_PARSED *normalizedGyrSensorData, 
+    ANGLES *currentGyro, 
+    RINGBUFFER *ringbufferAccPitch, 
+    float *currentAccPitch);
+
+float calculate_roll(
+    float *currentRoll,		
+    IWRSENSOR_PARSED_F *normalizedAccSensorData, 
+    IWRSENSOR_PARSED *normalizedGyrSensorData, 
+    ANGLES *currentGyro, 
+    RINGBUFFER *ringbufferAccRoll, 
+    float *currentAccRoll);
 	
-	float calculate_pitch(
-	    float &currentPitch,		
-	    IWRSENSOR_PARSED_F &normalizedAccSensorData, 
-	    IWRSENSOR_PARSED &normalizedGyrSensorData, 
-	    ANGLES &currentGyro, 
-	    RINGBUFFER &ringbufferAccPitch, 
-	    float &currentAccPitch);
+float calculate_yaw(
+    IWRSENSOR_PARSED_F *normalizedMagSensorData, 
+    IWRSENSOR_PARSED *normalizedGyrSensorData, 
+    ANGLES *currentGyro,
+	float *currentYaw,
+	float *currentPitch,
+	float *currentRoll);
 
-	float calculate_roll(
-	    float &currentRoll,		
-	    IWRSENSOR_PARSED_F &normalizedAccSensorData, 
-	    IWRSENSOR_PARSED &normalizedGyrSensorData, 
-	    ANGLES &currentGyro, 
-	    RINGBUFFER &ringbufferAccRoll, 
-	    float &currentAccRoll);
-	
-	float calculate_yaw(
-        IWRSENSOR_PARSED_F &normalizedMagSensorData, 
-        IWRSENSOR_PARSED &normalizedGyrSensorData, 
-	    ANGLES &currentGyro,
-	    float &currentYaw,
-		float &currentPitch,
-		float &currentRoll);
+float geometric_distribution(float p, int k);
 
-	float geometric_distribution(float p, int k);
-
-	void calibrate(ATTITUDE_SENSOR &self);
-	//void calculateAngles(double & yaw, double & pitch, double & roll, bool useCalib);
-	void receive(ATTITUDE_SENSOR &self);
-
-	IWRSENSDATA_PARSED parseData(ATTITUDE_SENSOR &self);
-};
+#endif

@@ -1,8 +1,8 @@
-CPP      = /usr/bin/g++
+GCC      = /usr/bin/gcc
 INCLUDEDIR = src/
-CPPFLAGS  = -Wall -I$(INCLUDEDIR)
-SRC = src/AttitudeSensor.cpp src/Head.cpp src/example/main.cpp 
-HEADERS = src/AttitudeSensor.h src/Head.h src/Logger.h 
+CFLAGS  = -Wall -I$(INCLUDEDIR)
+SRC = src/attitude_sensor.c src/example.c 
+HEADERS = src/attitude_sensor.h  
 
 example: $(SRC) $(HEADERS)
-	$(CPP) $(CPPFLAGS) -o example $(SRC) 
+	$(GCC) $(CFLAGS) -o example $(SRC) 

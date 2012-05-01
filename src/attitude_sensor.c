@@ -27,78 +27,96 @@ of the authors and should not be interpreted as representing official policies,
 either expressed or implied, of the FreeBSD Project.
 */
 
-#include "AttitudeSensor.h"
+#include "attitude_sensor.h"
 
 #include <linux/types.h>
 #include <linux/input.h>
 #include <linux/hidraw.h>
-#include <math.h>
+
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+
+#include <math.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <string.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 
 ATTITUDE_SENSOR* attitude_sensor_new() {
-
-    ATTITUDE_SENSOR *sensor;
-    sensor = (ATTITUDE_SENSOR *) malloc(sizeof(ATTITUDE_SENSOR));
-
-    sensor->fileDevice = open(
+    ATTITUDE_SENSOR *self = (ATTITUDE_SENSOR *) malloc(sizeof(ATTITUDE_SENSOR));
+   
+    /**
+     * Try to open the hidraw device for reading the raw data. 
+     * In future using libusb would be more elegant. 
+     */
+    self->fileDevice = open(
 		ATTITUDE_SENSOR_HIDRAW,
 		O_RDWR | O_NONBLOCK);
 
-	if(sensor->fileDevice < 0) {
+	if(self->fileDevice < 0) {
         LOG("Could not open device.");
 	    return;
 	}	
 	
-	sensor->zeroAngles.yaw = 0.0;
-	sensor->zeroAngles.pitch = 0.0;
-	sensor->zeroAngles.roll = 0.0;
-	sensor->currentAngles.yaw = 0.0;
-	sensor->currentAngles.pitch = 0.0;
-	sensor->currentAngles.roll = 0.0;
-	sensor->useYaw = true;
-	sensor->usePitch = true;
-	sensor->useRoll = true;
+	self->zero_angles.yaw = 0.0;
+	self->zero_angles.pitch = 0.0;
+	self->zero_angles.roll = 0.0;
+	self->current_angles.yaw = 0.0;
+	self->current_angles.pitch = 0.0;
+	self->current_angles.roll = 0.0;
+	self->use_yaw = true;
+	self->use_pitch = true;
+	self->use_roll = true;
 
-	if(configFile.is_open()){
-        sensor->read_configuration("attitudesensor.conf");
-	} else{
-		sensor->biasGyro = sensor->estimate_gyro_bias();
-		sensor->calibrate();
-        sensor->write_configuration();
+    /**
+     * Checking if config file already exists. If config already 
+     * exists then read configuration, otherwise calibrate and 
+     * write configuration.
+     */
+    FILE *config = fopen(ATTITUDE_SENSOR_CONFIG_FILE, "r");
+    if(config) {
+        fclose(file);
+        attitude_sensor_read_config(self)
+    } else {
+        self->bias_gyro = attitude_sensor_estimate_gyro_bias(self);
+ 		attitude_sensor_calibrate(self);
+        attitude_sensor_write_config(self);
+    }
+
+    /**
+     * Clearing the ringbuffers, which are used for smoothing the 
+     * sensor values
+     */
+	self->ringbuffer_acc_pitch.pointer = 0;
+	self->ringbuffer_acc_roll.pointer = 0;
+    self->current_acc_pitch = 0.0;
+	self->current_acc_roll = 0.0;
+    for(int i = 0; i < ATTITUDE_SENSOR_RINGBUFFER_SIZE; i++){
+		self->ringbuffer_acc_pitch.measures[i] = 0.0;
+		self->ringbuffer_acc_roll.measures[i] = 0.0;
 	}
 
-	for(int i=0; i < ATTITUDE_SENSOR_RINGBUFFER_SIZE; i++){
-		sensor->ringbufferAccPitch.measures[i] = 0.0;
-		sensor->ringbufferAccRoll.measures[i] = 0.0;
-	}
-
-	sensor->ringbufferAccPitch.pointer = 0;
-	sensor->ringbufferAccRoll.pointer = 0;
-    sensor->currentAccPitch = 0.0;
-	sensor->currentAccRoll = 0.0;
-	
-	sensor->vuzixConnected = true;
+    /**
+     * Everything went fine.
+     */
+	self->vuzix_connected = true;
   
     LOG("AttitudeSensor instantiated.");
-    return sensor;
+    return self;
 }
 
-const HEAD_DIRECTION* get_head_direction(ATTITUDE_SENSOR &self){
-	return self.head;
+void attitude_sensor_delete(ATTITUDE_SENSOR *self) {
+    free(self);
 }
 
-/**
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- */
-void read_configuration(ATTITUDE_SENSOR &self, const char * configFile) {
+const HEAD_DIRECTION* attitude_sensor_get_head(ATTITUDE_SENSOR *self) {
+	return self->head_direction;
+}
+
+void attitude_sensor_read_config(ATTITUDE_SENSOR *self) {
+
     LOG("Reading configuration");
     	
 	string line;
@@ -134,11 +152,7 @@ void read_configuration(ATTITUDE_SENSOR &self, const char * configFile) {
 	this->calibAccMax.z=atoi(line.c_str());
 }
 
-/**
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- */
-void write_configuration(ATTITUDE_SENSOR &self) {
+void attitude_sensor_write_config(ATTITUDE_SENSOR *self) {
 	LOG("Writing configuration");
     
     ofstream configFileOut("attitudesensor.conf");
@@ -161,210 +175,190 @@ void write_configuration(ATTITUDE_SENSOR &self) {
 
 }
 
-/**
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- */
-void receive() {
-
+void attitude_sensor_receive(ATTITUDE_SENSOR *self) {
 	bytesRead = read(
-		this->fileDevice, 
-		buf, 
+		self->file_device, 
+		self->buf, 
 		ATTITUDE_SENSOR_BUFFERSIZE);
 	
-	if (bytesRead < 0) {
+	if (self->bytes_read < 0) {
 	} else {
 		memcpy(
-			&this->sensdata, 
-			&buf[2],  //offset
+			&(self->sensdata), 
+			&(self->buf[2]),  //offset
 			sizeof(unsigned char) * 24);
-		this->parsed = this->parse_data();
+		self->parsed = attitude_sensor_parse_data(self);
 	}
 }
 
-/**
- * @author Justin Philipp Heinermann<justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
 ANGLES calculate_angles( 
-		ANGLES &currentAngles,		
-		IWRSENSOR_PARSED_F &normalizedMagSensorData, 
-		IWRSENSOR_PARSED_F &normalizedAccSensorData, 
-		IWRSENSOR_PARSED &normalizedGyrSensorData, 
-		ANGLES &currentGyro,
-		RINGBUFFER &ringbufferAccPitch,
-		RINGBUFFER &ringbufferAccRoll,
-		float &currentAccPitch,
-		float &currentAccRoll) {
+		ANGLES *current_angles,		
+		IWRSENSOR_PARSED_F *normalized_mag_sensor_data, 
+		IWRSENSOR_PARSED_F *normalized_acc_sensor_data, 
+		IWRSENSOR_PARSED *normalized_gyr_sensor_data, 
+		ANGLES *current_gyro,
+		RINGBUFFER *ringbuffer_acc_pitch,
+		RINGBUFFER *ringbuffer_acc_roll,
+		float *current_acc_pitch,
+		float *current_acc_roll) {
 
-	ANGLES retVal;
+	ANGLES ret_val;
 
-	retVal.yaw = calculate_yaw(normalizedMagSensorData, 
-		normalizedGyrSensorData, currentGyro,currentAngles.yaw, currentAccPitch, currentAccRoll);
+	ret_val.yaw = calculate_yaw(
+        normalized_mag_sensor_data, 
+		normalized_gyr_sensor_data, 
+        current_gyro,
+        current_angles.yaw, 
+        current_acc_pitch, 
+        current_acc_roll);
 
-	retVal.pitch = calculatePitch(
-            currentAngles.pitch, 
-		    normalizedAccSensorData, 
-			normalizedGyrSensorData, 
-			currentGyro, 
-			ringbufferAccPitch, 
-			currentAccPitch);
+	ret_val.pitch = calculate_pitch(
+        current_angles.pitch, 
+		normalized_acc_sensor_data, 
+		normalized_gyr_sensor_data, 
+		current_gyro, 
+		ringbuffer_acc_pitch, 
+		current_acc_pitch);
 	
-	retVal.roll = calculate_roll(
-			currentAngles.roll,
-			normalizedAccSensorData, 
-			normalizedGyrSensorData, 
-			currentGyro, 
-			ringbufferAccRoll, 
-			currentAccRoll);
+	ret_val.roll = calculate_roll(
+		current_angles.roll,
+		normalized_acc_sensor_data, 
+		normalized_gyr_sensor_data, 
+		current_gyro, 
+		ringbuffer_acc_roll, 
+		current_acc_roll);
 	
-	return retVal;
+	return ret_val;
 }
 
 /*
  * Calculate the pitch angle from accelerometer and gyroscope input.
  * Side-effects: be aware that this function changes the ringbuffer for
  * the accelerometer in order to filter the data.
- *
- * @brief Calculate the pitch angle from accelerometer and gyroscope input
- *
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
  */
-float calculatePitch(
-	float &currentPitch,
-	IWRSENSOR_PARSED_F &normalizedAccSensorData,
-	IWRSENSOR_PARSED
-	&normalizedGyrSensorData, 
-	ANGLES &currentGyro,
-	RINGBUFFER &ringbufferAccPitch,
-	float &currentAccPitch){
+float calculate_pitch(
+	float *current_pitch,
+	IWRSENSOR_PARSED_F *normalized_acc_sensor_data,
+	IWRSENSOR_PARSED *normalized_gyr_sensor_data, 
+	ANGLES *current_gyro,
+	RINGBUFFER *ringbuffer_acc_pitch,
+	float *current_acc_pitch) {
 
-	float retVal;
+	float ret_val;
 
 	//Filter Acc Data
-	ringbufferAccPitch.measures[ringbufferAccPitch.pointer] = 
+	ringbuffer_acc_pitch.measures[ringbuffer_acc_pitch.pointer] = 
 		atan2(
-            normalizedAccSensorData.x, 
-			sqrt(normalizedAccSensorData.z * normalizedAccSensorData.z + 
-			normalizedAccSensorData.y * normalizedAccSensorData.y)
+            normalized_acc_sensor_data.x, 
+			sqrt(normalized_acc_sensor_data.z * normalized_acc_sensor_data.z + 
+			normalized_acc_sensor_data.y * normalized_acc_sensor_data.y)
 		) / M_PI; 
 
-    float accAvg = 0.0;
+    float acc_avg = 0.0;
 
 	for(unsigned int i = 0; i < ATTITUDE_SENSOR_RINGBUFFER_SIZE; i++){
 		
-        unsigned int currentIndex =
-			(ringbufferAccPitch.pointer + i) % 
+        unsigned int current_index =
+			(ringbuffer_acc_pitch.pointer + i) % 
                 ATTITUDE_SENSOR_RINGBUFFER_SIZE;
 		
-        float coefficient=geometric_distribution(
+        float coefficient = geometric_distribution(
 				ATTITUDE_SENSOR_GEOMETRIC_PROBABILITY,
 				i);
 
-		accAvg += coefficient * ringbufferAccPitch.measures[currentIndex];	
+		acc_avg += coefficient * ringbuffer_acc_pitch.measures[current_index];	
 	}
 
-	ringbufferAccPitch.pointer = ringbufferAccPitch.pointer + 1;
+	ringbuffer_acc_pitch.pointer = ringbuffer_acc_pitch.pointer + 1;
 	
-    if(ringbufferAccPitch.pointer == ATTITUDE_SENSOR_RINGBUFFER_SIZE){
-		ringbufferAccPitch.pointer = 0;	
+    if(ringbuffer_acc_pitch.pointer == ATTITUDE_SENSOR_RINGBUFFER_SIZE){
+		ringbuffer_acc_pitch.pointer = 0;	
 	}
 		
 	//Gyro is difference, acc is absolute position
-	accAvg*=90.0;
-	currentAccPitch=accAvg;
+	acc_avg *= 90.0;
+	current_acc_pitch = accAvg;
 
 	//Add gyro to currentPitch
-	currentPitch = currentPitch + normalizedGyrSensorData.y * (90.0/32768.0);
+	current_pitch = 
+        current_pitch + normalized_gyr_sensor_data.y * (90.0/32768.0);
 
-	float possibleErrorPitch=currentAccPitch-currentPitch;
-//	std::cout<<"Pitch gyr acc dif: "<<currentPitch<<" "<<currentAccPitch<<" "<<possibleErrorPitch<<std::endl;
+	float possible_error_pitch = current_acc_pitch - current_pitch;
 
-	if(possibleErrorPitch > 2.0 || possibleErrorPitch < -2.0){
-		currentPitch = currentPitch + 0.05 * possibleErrorPitch;
+	if(possible_error_pitch > 2.0 || possible_error_pitch < -2.0){
+		current_pitch = current_pitch + 0.05 * possible_error_pitch;
 	}
 
-
-	retVal=currentPitch;
-	return retVal; 
+	ret_val = current_pitch;
+	return ret_val; 
 }
 
-/**
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
 float calculate_roll(
-	float &currentRoll,
-	IWRSENSOR_PARSED_F &normalizedAccSensorData,
-	IWRSENSOR_PARSED &normalizedGyrSensorData, 
-	ANGLES &currentGyro,
-	RINGBUFFER &ringbufferAccRoll,
-	float &currentAccRoll){
+	float *current_roll,
+	IWRSENSOR_PARSED_F *normalized_acc_sensor_data,
+	IWRSENSOR_PARSED *normalized_gyr_sensor_data, 
+	ANGLES *current_gyro,
+	RINGBUFFER *ringbuffer_acc_roll,
+	float *current_acc_roll){
 
-	float retVal;
+	float ret_val;
 
     //Filter Acc Data
-	ringbufferAccRoll.measures[ringbufferAccRoll.pointer]=
+	ringbuffer_acc_roll.measures[ringbuffer_acc_roll.pointer]=
 		atan2(	
-			sqrt(normalizedAccSensorData.x* normalizedAccSensorData.x + 
-			normalizedAccSensorData.z*normalizedAccSensorData.z),
-			normalizedAccSensorData.y
-		)/M_PI; 
+			sqrt(normalized_acc_sensor_data.x * normalized_acc_sensor_data.x + 
+			normalized_acc_sensor_data.z * normalized_acc_sensor_data.z),
+			normalized_acc_sensor_data.y
+		) / M_PI; 
 	
-    float accAvg=0.0;
+    float acc_avg=0.0;
 	
     for(unsigned int i=0; i < ATTITUDE_SENSOR_RINGBUFFER_SIZE; i++){
 
-		unsigned int currentIndex =
-			(ringbufferAccRoll.pointer + i) % ATTITUDE_SENSOR_RINGBUFFER_SIZE;
+		unsigned int current_index =
+			(ringbuffer_acc_roll.pointer + i) % ATTITUDE_SENSOR_RINGBUFFER_SIZE;
 	
         float coefficient = geometric_distribution(
 				ATTITUDE_SENSOR_GEOMETRIC_PROBABILITY,i);
 		
-        accAvg += coefficient * ringbufferAccRoll.measures[currentIndex];	
+        accAvg += coefficient * ringbuffer_acc_roll.measures[current_index];	
 	}
 
-	ringbufferAccRoll.pointer = ringbufferAccRoll.pointer + 1;
+	ringbuffer_acc_roll.pointer = ringbuffer_acc_roll.pointer + 1;
 	
-    if(ringbufferAccRoll.pointer == ATTITUDE_SENSOR_RINGBUFFER_SIZE){
-		ringbufferAccRoll.pointer = 0;	
+    if(ringbuffer_acc_roll.pointer == ATTITUDE_SENSOR_RINGBUFFER_SIZE){
+		ringbuffer_acc_roll.pointer = 0;	
 	}
 		
-	currentAccRoll = accAvg*90.0;
+	current_acc_roll = acc_avg * 90.0;
 
 	//Add gyro to currentPitch
-	currentRoll = currentRoll + normalizedGyrSensorData.z *0.5*(180.0/32768.0);
-	float possibleErrorRoll=currentAccRoll-currentRoll;
+	current_roll = current_roll + normalized_gyr_sensor_data.z * 0.5 *(180.0/32768.0);
+	float possible_error_roll = current_acc_roll - currentRoll;
 
-	//std::cout<<"Roll gyr acc dif: "<<currentRoll<<" "<<currentAccRoll<<" "<<possibleErrorRoll<<std::endl;
-	if(possibleErrorRoll > 1.0){
-		currentRoll = currentRoll + 0.05 * possibleErrorRoll;
-	}else if(possibleErrorRoll < -1.0){
-		currentRoll = currentRoll + 0.05 * possibleErrorRoll;
+	if(possible_errorRoll > 1.0) {
+		current_roll = current_roll + 0.05 * possible_error_roll;
+	} else if(possible_error_roll < -1.0) {
+		current_roll = current_roll + 0.05 * possible_error_roll;
 	}
-	retVal=currentRoll;
-	return retVal; 
+	ret_val = current_roll;
+	return ret_val; 
 }
 
-/**
- * @author Justin Philipp Heinermann<justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
 float calculate_yaw(
-    IWRSENSOR_PARSED_F &normalizedMagSensorData, 
-    IWRSENSOR_PARSED &normalizedGyrSensorData, 
-    ANGLES &currentGyro,
-    float &currentYaw,
-    float &currentPitch,
-    float &currentRoll
-    ) {
-	static double lastMagYaw=0.0;
-    IWRSENSOR_PARSED_F mag = normalizedMagSensorData;
-	float retVal;
-	float magYaw;
+    IWRSENSOR_PARSED_F *normalized_mag_sensor_data, 
+    IWRSENSOR_PARSED *normalized_gyr_sensor_data, 
+    ANGLES *current_gyro,
+    float *current_yaw,
+    float *current_pitch,
+    float *current_roll) {
+
+	static double last_mag_yaw=0.0;
+    IWRSENSOR_PARSED_F mag = normalized_mag_sensor_data;
+	float ret_val;
+	float mag_yaw;
 	
-	float gyrDiff=normalizedGyrSensorData.x * 0.2 * (180.0 / 32768.0);
+	float gyr_diff = normalized_gyr_sensor_data.x * 0.2 * (180.0 / 32768.0);
 
 	double xh=mag.x;
 	double yh=mag.y;
@@ -374,122 +368,108 @@ float calculate_yaw(
 	magYaw = atan2(xh, yh); 
 	magYaw*= 0.2 * (180.0 / 32768.0);
 	
-	float magDiff=magYaw-lastMagYaw;
-	
-	float possibleErrorYaw=gyrDiff-magDiff;
+	float mag_diff = mag_yaw - last_mag_yaw;
+	float possible_error_yaw = gyr_diff - mag_diff;
 
-	if(possibleErrorYaw > 1.0){
-		retVal = currentGyro.yaw + gyrDiff - 0.05 * possibleErrorYaw;
-	}else if(possibleErrorYaw < -1.0){
-		retVal = currentGyro.yaw + gyrDiff + 0.05 * possibleErrorYaw;
-	}else{
-		retVal=currentGyro.yaw + gyrDiff;
+	if(possible_error_yaw > 1.0){
+		ret_val = current_gyro.yaw + gyr_diff - 0.05 * possible_error_yaw;
+	} else if(possible_error_yaw < -1.0){
+		ret_val = current_gyro.yaw + gyr_diff + 0.05 * possible_error_yaw;
+	} else {
+		ret_val = current_gyro.yaw + gyr_diff;
 	}
-	currentGyro.yaw = retVal;
-	return retVal;
+
+	current_gyro.yaw = ret_val;
+	return ret_val;
 }
 
-/**
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
 float geometric_distribution(float p, int k){
 	return p * pow((1-p), k-1);
 }
 
-/**
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
-void calibrate() {
-	receive();
+void attitude_sensor_calibrate(ATTITUDE_SENSOR *self) {
+	attitude_sensor_receive(self);
 	
-    this->calibMagMin=parsed.mag_sensor;
-	this->calibMagMax=parsed.mag_sensor;
-	this->calibAccMin=parsed.acc_sensor;
-	this->calibAccMax=parsed.acc_sensor;
+    self->calib_mag_min = self->parsed.mag_sensor;
+	self->calib_mag_max = self->parsed.mag_sensor;
+	self->calib_acc_min = self->parsed.acc_sensor;
+	self->calib_acc_max = self->parsed.acc_sensor;
 	
-    int16_t *ptr = (int16_t *) &this->parsed;
-	int16_t *ptrMagMin = (int16_t *) &this->calibMagMin;
-	int16_t *ptrMagMax = (int16_t *) &this->calibMagMax;
-	int16_t *ptrAccMin = (int16_t *) &this->calibAccMin;
-	int16_t *ptrAccMax = (int16_t *) &this->calibAccMax;
+    int16_t *ptr = (int16_t *) &(self->parsed);
+	int16_t *ptr_mag_min = (int16_t *) &(self->calib_mag_min);
+	int16_t *ptr_mag_max = (int16_t *) &(self->calib_mag_max);
+	int16_t *ptr_acc_min = (int16_t *) &(self->calib_acc_min);
+	int16_t *ptr_acc_max = (int16_t *) &(self->calib_acc_max);
 	
 	for(int i = 1; i < 250; i++) {//TODO define
-		receive();
+		
+        attitude_sensor_receive(self);
+
 		for(int k = 0; k < 3; k++) {
-//			printf("%i\n",ptr[k]);
-			if(ptrMagMin[k]>ptr[k]){
-//				printf("doh\n");
-				ptrMagMin[k] = ptr[k];
-			}else if(ptrMagMax[k]<ptr[k]){
-				ptrMagMax[k] = ptr[k];
+			if(ptr_mag_min[k] > ptr[k]){
+				ptr_mag_min[k] = ptr[k];
+			} else if(ptr_mag_max[k] < ptr[k]){
+				ptr_mag_max[k] = ptr[k];
 			}
 		}
 		   
 		for(int k = 3; k < 6; k++) {
-				if(ptrAccMin[k-3]>ptr[k]){
-					ptrAccMin[k-3] = ptr[k];
-				}else if(ptrAccMax[k-3]<ptr[k]){
-					ptrAccMax[k-3] = ptr[k];
+				if(ptr_acc_min[k - 3] > ptr[k]) {
+					ptr_acc_min[k - 3] = ptr[k];
+				} else if(ptr_acc_max[k - 3] < ptr[k]) {
+					ptr_acc_max[k - 3] = ptr[k];
 				}
 		}
+
 		usleep(50000); //50 millis
+
 		printf("calibMin: %i %i %i %i %i %i \n", 
-		    this->calibMagMin.x,
-			this->calibMagMin.y,
-			this->calibMagMin.z,
-			this->calibAccMin.x,
-			this->calibAccMin.y,
-			this->calibAccMin.z);
+		    self->calib_mag_min.x,
+			self->calib_mag_min.y,
+			self->calib_mag_min.z,
+			self->calib_acc_min.x,
+			self->calib_acc_min.y,
+			self->calib_acc_min.z);
 
 		printf("calibMax: %i %i %i %i %i %i \n", 
-			this->calibMagMax.x,
-			this->calibMagMax.y,
-			this->calibMagMax.z,
-			this->calibAccMax.x,
-			this->calibAccMax.y,
-			this->calibAccMax.z);
+			self->calib_mag_max.x,
+			self->calib_mag_max.y,
+			self->calib_mag_max.z,
+			self->calib_acc_max.x,
+			self->calib_acc_max.y,
+			self->calib_acc_max.z);
 	}
 }
 
 /**
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
+ * Read data, glasses must lie on the desk, and must not be moved.
  */
-IWRSENSOR_PARSED estimate_gyro_bias() {
-	IWRSENSOR_PARSED retVal;
+IWRSENSOR_PARSED attitude_sensor_estimate_gyro_bias(ATTITUDE_SENSOR *self) {
+	IWRSENSOR_PARSED ret_val;
 	long sums[3]={0,0,0};	
 
-	// read data
-	// glasses must lie on the desk
-	// and must not be moved
-	for(int i = 0; i < 4000; i++) {//TODO define
-		receive();
+    for(int i = 0; i < 4000; i++) {//TODO define
+		attitude_sensor_receive(self);
 		//int16_t **ptr = (int16_t **) &parsed; //TODO wieso nicht?
-		int16_t *ptr = (int16_t *) &parsed;
+		int16_t *ptr = (int16_t *) &(self->parsed);
 		for(int k = 6; k < 9; k++) {
-			//LOG(ATTITUDE_SENSOR_LOGGER_NAME) <<
-            //    "sum["<<k-6<<"]+="<<ptr[k]<<"="<<sums[k-6]<<Logger::endl;
-			sums[k-6] += (long) ptr[k];
+			sums[k - 6] += (long) ptr[k];
 		}
 	}
 
 	// calculate average
-	retVal.x = ((float) sums[0])/4000.0;
-	retVal.y = ((float) sums[1])/4000.0;
-	retVal.z = ((float) sums[2])/4000.0;
-	LOG("Gyroscope Bias x: %d", retVal.x);
-    LOG("Gyroscope Bias y: %d", retVal.y);
-    LOG("Gyroscope Bias z: %d", retVal.z);
+	ret_val.x = ((float) sums[0])/4000.0;
+	ret_val.y = ((float) sums[1])/4000.0;
+	ret_val.z = ((float) sums[2])/4000.0;
+	LOG("Gyroscope Bias x: %d", ret_val.x);
+    LOG("Gyroscope Bias y: %d", ret_val.y);
+    LOG("Gyroscope Bias z: %d", ret_val.z);
     LOG("Calibrate Gyro done");
-	return retVal;
+	return ret_val;
 }	
 
-/**
- * @author Justin Philipp Heinermann<justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
+// -----------------
+
 float normalizeValue(
     int16_t &min, 
     int16_t &max,
@@ -498,9 +478,6 @@ float normalizeValue(
     if(value < min) value = min;
 	if(value > max) value = max;
 	
-// wrong...
-// float retVal=((float) value - ((float) min + (float) max)/2);
-
 	float retVal=
 		2.0f*
 		(((float)value - (float)min))/
@@ -514,10 +491,6 @@ float normalizeValue(
 	return retVal;
 }
 
-/**
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
 IWRSENSOR_PARSED normalize_gyro(
     IWRSENSOR_PARSED &biasGyro, 
 	IWRSENSOR_PARSED &sensor){
@@ -530,11 +503,6 @@ IWRSENSOR_PARSED normalize_gyro(
     return retVal;
 }
 
-
-/**
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
 IWRSENSOR_PARSED_F normalize_sensor(
     IWRSENSOR_PARSED &calibMin,  
 	IWRSENSOR_PARSED &calibMax, 
@@ -549,10 +517,6 @@ IWRSENSOR_PARSED_F normalize_sensor(
     return retVal;
 }
 
-/**
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- * @author Justin Philipp Heinermann<justin.philipp.heinermann@uni-oldenburg.de>
- */
 IWRSENSDATA_PARSED parse_data() {
 
 	IWRSENSDATA_PARSED ret;
@@ -574,10 +538,6 @@ IWRSENSDATA_PARSED parse_data() {
 	return ret;
 }
 
-/**
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
 void timer_proc() {
 	if(!this->vuzixConnected){
 			return;
@@ -628,10 +588,6 @@ void timer_proc() {
 		this->head->angles.rollDeg = angles.roll -this->zeroAngles.roll;
 }
 
-/**
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
 void reset_head_direction() {
 	this->zeroAngles.yaw=this->currentGyro.yaw;
 	this->zeroAngles.pitch=this->currentAngles.pitch;
@@ -641,26 +597,14 @@ void reset_head_direction() {
 	this->zeroAngles.pitch, this->zeroAngles.roll);
 }
 
-/**
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
 void toggle_use_yaw() {
 	this->useYaw= (!this->useYaw);
 }	
 
-/**
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
 void toggle_use_pitch() {
 	this->usePitch= (!this->usePitch);
 }	
 
-/**
- * @author Justin Philipp Heinermann <justin.philipp.heinermann@uni-oldenburg.de>
- * @author Jendrik Poloczek <jendrik.poloczek@uni-oldenburg.de>
- */
 void toggle_use_roll() {
 	this->useRoll= (!this->useRoll);
 }	
