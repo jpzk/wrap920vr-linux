@@ -44,9 +44,9 @@ either expressed or implied, of the FreeBSD Project.
 #define LOG(string, args...) printf (string"\n", ##args)
 
 typedef struct tag_HEAD_DIRECTION {
-	float yawDeg;
-	float rollDeg;
-	float pitchDeg;
+    float yawDeg;
+    float rollDeg;
+    float pitchDeg;
 } HEAD_DIRECTION;
 
 typedef struct tag_IWRSENSOR_PARSED {
@@ -75,34 +75,34 @@ typedef struct tag_ANGLES {
 	
 typedef struct tag_RINGBUFFER {
     float measures[ATTITUDE_SENSOR_RINGBUFFER_SIZE]; 
-	unsigned int pointer;
+    unsigned int pointer;
 } RINGBUFFER;
 
 typedef struct tag_ATTITUDE_SENSOR {
     bool use_yaw, use_pitch, use_roll;
     float current_acc_pitch;
-	float current_acc_roll;
+    float current_acc_roll;
     int file_device, bytes_read;
-	unsigned char buf[28]; //TODO magic
+    unsigned char buf[28]; //TODO magic
 
-	HEAD_DIRECTION head_direction;
+    HEAD_DIRECTION head_direction;
     static bool vuzix_connected;
 	
     IWRSENSDATA sensdata;
-	IWRSENSDATA_PARSED parsed;
-	IWRSENSOR_PARSED calib_mag_min;
-	IWRSENSOR_PARSED calib_mag_max;
-	IWRSENSOR_PARSED calib_acc_min;
-	IWRSENSOR_PARSED calib_acc_max;
-	IWRSENSOR_PARSED bias_gyro;
+    IWRSENSDATA_PARSED parsed;
+    IWRSENSOR_PARSED calib_mag_min;
+    IWRSENSOR_PARSED calib_mag_max;
+    IWRSENSOR_PARSED calib_acc_min;
+    IWRSENSOR_PARSED calib_acc_max;
+    IWRSENSOR_PARSED bias_gyro;
 
-	ANGLES zero_angles;
-	ANGLES current_gyro;
-	ANGLES current_acc;
-	ANGLES current_angles;
+    ANGLES zero_angles;
+    ANGLES current_gyro;
+    ANGLES current_acc;
+    ANGLES current_angles;
 
-	RINGBUFFER ringbuffer_acc_pitch;
-	RINGBUFFER ringbuffer_acc_roll;		
+    RINGBUFFER ringbuffer_acc_pitch;
+    RINGBUFFER ringbuffer_acc_roll;		
 } ATTITUDE_SENSOR;
 
 /**
@@ -139,7 +139,7 @@ float normalize_value(
 	
 IWRSENSOR_PARSED_F normalize_sensor(
     IWRSENSOR_PARSED *calibMin,  
-	IWRSENSOR_PARSED *calibMax, 
+    IWRSENSOR_PARSED *calibMax, 
     IWRSENSOR_PARSED *sensor);
 	
 IWRSENSOR_PARSED normalize_gyro(
@@ -148,14 +148,14 @@ IWRSENSOR_PARSED normalize_gyro(
 
 ANGLES calculate_angles( 
     ANGLES *currentAngles,		
-	IWRSENSOR_PARSED_F *normalizedMagSensorData, 
-	IWRSENSOR_PARSED_F *normalizedAccSensorData,
-	IWRSENSOR_PARSED *normalizedGyrSensorData, 
-	ANGLES *currentGyro, 
-	RINGBUFFER *ringbufferAccPitch, 
-	RINGBUFFER *ringbufferAccRoll, 
-	float *currentAccPitch,
-	float *currentAccRoll);
+    IWRSENSOR_PARSED_F *normalizedMagSensorData, 
+    IWRSENSOR_PARSED_F *normalizedAccSensorData,
+    IWRSENSOR_PARSED *normalizedGyrSensorData, 
+    ANGLES *currentGyro, 
+    RINGBUFFER *ringbufferAccPitch, 
+    RINGBUFFER *ringbufferAccRoll, 
+    float *currentAccPitch,
+    float *currentAccRoll);
 	
 float calculate_pitch(
     float *currentPitch,		
@@ -177,9 +177,9 @@ float calculate_yaw(
     IWRSENSOR_PARSED_F *normalizedMagSensorData, 
     IWRSENSOR_PARSED *normalizedGyrSensorData, 
     ANGLES *currentGyro,
-	float *currentYaw,
-	float *currentPitch,
-	float *currentRoll);
+    float *currentYaw,
+    float *currentPitch,
+    float *currentRoll);
 
 float geometric_distribution(float p, int k);
 
