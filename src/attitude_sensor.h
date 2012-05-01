@@ -27,11 +27,9 @@ of the authors and should not be interpreted as representing official policies,
 either expressed or implied, of the FreeBSD Project.
 */
 
-#ifndef _ATTITUDE_SENSOR_H
-#define _ATTITUDE_SENSOR_H
-
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #define ATTITUDE_SENSOR_VENDOR 0x1bae
 #define ATTITUDE_SENSOR_PRODUCT 0x014b
@@ -40,13 +38,14 @@ either expressed or implied, of the FreeBSD Project.
 #define ATTITUDE_SENSOR_RINGBUFFER_SIZE 10 
 #define ATTITUDE_SENSOR_GEOMETRIC_PROBABILITY 0.5
 #define ATTITUDE_SENSOR_CONFIG_FILE "attitudesensor.conf"
+#define PI 3.14159265358979323846f
 
 #define LOG(string, args...) printf (string"\n", ##args)
 
 typedef struct tag_HEAD_DIRECTION {
-    float yawDeg;
-    float rollDeg;
-    float pitchDeg;
+    float yaw_deg;
+    float roll_deg;
+    float pitch_deg;
 } HEAD_DIRECTION;
 
 typedef struct tag_IWRSENSOR_PARSED {
@@ -85,8 +84,8 @@ typedef struct tag_ATTITUDE_SENSOR {
     int file_device, bytes_read;
     unsigned char buf[28]; //TODO magic
 
-    HEAD_DIRECTION head_direction;
-    static bool vuzix_connected;
+    HEAD_DIRECTION head;
+    bool vuzix_connected;
 	
     IWRSENSDATA sensdata;
     IWRSENSDATA_PARSED parsed;
@@ -113,18 +112,18 @@ void attitude_sensor_delete(ATTITUDE_SENSOR *self);
 
 void attitude_sensor_timer_proc(ATTITUDE_SENSOR *self);
 void attitude_sensor_reset_head(ATTITUDE_SENSOR *self);
-void attitude_sensor_get_head(ATTITUDE_SENSOR *self);
+HEAD_DIRECTION attitude_sensor_get_head(ATTITUDE_SENSOR *self);
 
 void attitude_sensor_toggle_use_yaw(ATTITUDE_SENSOR *self);
 void attitude_sensor_toggle_use_pitch(ATTITUDE_SENSOR *self);
 void attitude_sensor_toggle_use_roll(ATTITUDE_SENSOR *self);
 
-void attitude_sensor_read_config(ATTITUDE_SENSOR *self, const char *config);
+void attitude_sensor_read_config(ATTITUDE_SENSOR *self);
 void attitude_sensor_write_config(ATTITUDE_SENSOR *self);
 
-void attitude_sensor_estimate_gyro_bias(ATTITUDE_SENSOR *self);
-void attitude_calibrate(ATTITUDE_SENSOR *self);
-void attitude_receive(ATTITUDE_SENSOR *self);
+IWRSENSOR_PARSED attitude_sensor_estimate_gyro_bias(ATTITUDE_SENSOR *self);
+void attitude_sensor_calibrate(ATTITUDE_SENSOR *self);
+void attitude_sensor_receive(ATTITUDE_SENSOR *self);
 
 IWRSENSDATA_PARSED attitude_sensor_parse_data(ATTITUDE_SENSOR *self);
 
@@ -183,4 +182,3 @@ float calculate_yaw(
 
 float geometric_distribution(float p, int k);
 
-#endif

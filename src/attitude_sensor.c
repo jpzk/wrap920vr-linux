@@ -40,9 +40,11 @@ either expressed or implied, of the FreeBSD Project.
 #include <math.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 ATTITUDE_SENSOR* attitude_sensor_new() {
     ATTITUDE_SENSOR *self = (ATTITUDE_SENSOR *) malloc(sizeof(ATTITUDE_SENSOR));
@@ -51,11 +53,11 @@ ATTITUDE_SENSOR* attitude_sensor_new() {
      * Try to open the hidraw device for reading the raw data. 
      * In future using libusb would be more elegant. 
      */
-    self->fileDevice = open(
+    self->file_device = open(
         ATTITUDE_SENSOR_HIDRAW,
         O_RDWR | O_NONBLOCK);
 
-    if(self->fileDevice < 0) {
+    if(self->file_device < 0) {
         LOG("Could not open device.");
         return(NULL);
     }	
@@ -77,8 +79,8 @@ ATTITUDE_SENSOR* attitude_sensor_new() {
      */
     FILE *config = fopen(ATTITUDE_SENSOR_CONFIG_FILE, "r");
     if(config) {
-        fclose(file);
-        attitude_sensor_read_config(self)
+        fclose(config);
+        attitude_sensor_read_config(self);
     } else {
         self->bias_gyro = attitude_sensor_estimate_gyro_bias(self);
         attitude_sensor_calibrate(self);
@@ -93,7 +95,9 @@ ATTITUDE_SENSOR* attitude_sensor_new() {
     self->ringbuffer_acc_roll.pointer = 0;
     self->current_acc_pitch = 0.0;
     self->current_acc_roll = 0.0;
-    for(int i = 0; i < ATTITUDE_SENSOR_RINGBUFFER_SIZE; i++){
+
+    int i = 0;
+    for(;i < ATTITUDE_SENSOR_RINGBUFFER_SIZE; i++) {
         self->ringbuffer_acc_pitch.measures[i] = 0.0;
         self->ringbuffer_acc_roll.measures[i] = 0.0;
     }
@@ -111,8 +115,8 @@ void attitude_sensor_delete(ATTITUDE_SENSOR *self) {
     free(self);
 }
 
-const HEAD_DIRECTION* attitude_sensor_get_head(ATTITUDE_SENSOR *self) {
-    return(self->head_direction);
+HEAD_DIRECTION attitude_sensor_get_head(ATTITUDE_SENSOR *self) {
+    return(self->head);
 }
 
 void attitude_sensor_read_config(ATTITUDE_SENSOR *self) {
@@ -124,7 +128,7 @@ void attitude_sensor_write_config(ATTITUDE_SENSOR *self) {
 }
 
 void attitude_sensor_receive(ATTITUDE_SENSOR *self) {
-    bytesRead = read(
+    self->bytes_read = read(
         self->file_device, 
         self->buf, 
         ATTITUDE_SENSOR_BUFFERSIZE);
@@ -156,12 +160,12 @@ ANGLES calculate_angles(
         normalized_mag_sensor_data, 
         normalized_gyr_sensor_data, 
         current_gyro,
-        current_angles.yaw, 
+        &(current_angles->yaw), 
         current_acc_pitch, 
         current_acc_roll);
 
     ret_val.pitch = calculate_pitch(
-        current_angles.pitch, 
+        &(current_angles->pitch), 
         normalized_acc_sensor_data, 
         normalized_gyr_sensor_data, 
         current_gyro, 
@@ -169,7 +173,7 @@ ANGLES calculate_angles(
         current_acc_pitch);
 	
     ret_val.roll = calculate_roll(
-        current_angles.roll,
+        &(current_angles->roll),
         normalized_acc_sensor_data, 
         normalized_gyr_sensor_data, 
         current_gyro, 
@@ -184,6 +188,8 @@ ANGLES calculate_angles(
  * Side-effects: be aware that this function changes the ringbuffer for
  * the accelerometer in order to filter the data.
  */
+// @todo: is current pitch changed here?
+// possible mistake.
 float calculate_pitch(
     float *current_pitch,
     IWRSENSOR_PARSED_F *normalized_acc_sensor_data,
@@ -193,96 +199,107 @@ float calculate_pitch(
     float *current_acc_pitch) {
 
     float ret_val;
+    float current_pitch_val = *current_pitch;
+    float current_acc_pitch_val = *current_acc_pitch;
 
     //Filter Acc Data
-    ringbuffer_acc_pitch.measures[ringbuffer_acc_pitch.pointer] = atan2(
-        normalized_acc_sensor_data.x, 
-        sqrt(normalized_acc_sensor_data.z * normalized_acc_sensor_data.z + 
-        normalized_acc_sensor_data.y * normalized_acc_sensor_data.y)) / M_PI; 
+    ringbuffer_acc_pitch->measures[ringbuffer_acc_pitch->pointer] = atan2(
+        normalized_acc_sensor_data->x, 
+        sqrt(normalized_acc_sensor_data->z * normalized_acc_sensor_data->z + 
+        normalized_acc_sensor_data->y * normalized_acc_sensor_data->y)) / PI; 
 
     float acc_avg = 0.0;
 
-    for(unsigned int i = 0; i < ATTITUDE_SENSOR_RINGBUFFER_SIZE; i++){	
-        unsigned int current_index = (ringbuffer_acc_pitch.pointer + i) % 
+    unsigned int i = 0;
+    for(; i < ATTITUDE_SENSOR_RINGBUFFER_SIZE; i++){	
+        unsigned int current_index = (ringbuffer_acc_pitch->pointer + i) % 
             ATTITUDE_SENSOR_RINGBUFFER_SIZE;
 		
         float coefficient = geometric_distribution(
             ATTITUDE_SENSOR_GEOMETRIC_PROBABILITY, i);
 
-        acc_avg += coefficient * ringbuffer_acc_pitch.measures[current_index];	
+        acc_avg += coefficient * ringbuffer_acc_pitch->measures[current_index];	
     }
 
-    ringbuffer_acc_pitch.pointer = ringbuffer_acc_pitch.pointer + 1;
+    ringbuffer_acc_pitch->pointer = ringbuffer_acc_pitch->pointer + 1;
 	
-    if(ringbuffer_acc_pitch.pointer == ATTITUDE_SENSOR_RINGBUFFER_SIZE) {
-        ringbuffer_acc_pitch.pointer = 0; 
+    if(ringbuffer_acc_pitch->pointer == ATTITUDE_SENSOR_RINGBUFFER_SIZE) {
+        ringbuffer_acc_pitch->pointer = 0; 
     }
 		
 	//Gyro is difference, acc is absolute position
     acc_avg *= 90.0;
-    current_acc_pitch = accAvg;
+    current_acc_pitch_val = acc_avg;
 
 	//Add gyro to currentPitch
-    current_pitch = current_pitch + 
-        normalized_gyr_sensor_data.y * (90.0/32768.0);
+    current_pitch_val = current_pitch_val + 
+        normalized_gyr_sensor_data->y * (90.0/32768.0);
 
-    float possible_error_pitch = current_acc_pitch - current_pitch;
+    float possible_error_pitch = current_acc_pitch_val - current_pitch_val;
 
     if(possible_error_pitch > 2.0 || possible_error_pitch < -2.0){
-        current_pitch = current_pitch + 0.05 * possible_error_pitch;
+        current_pitch_val = current_pitch_val + 0.05 * possible_error_pitch;
     }
 
-    ret_val = current_pitch;
+    ret_val = current_pitch_val;
     return(ret_val); 
 }
 
+// @todo: is current pitch changed here?
+// possible mistake.
 float calculate_roll(
     float *current_roll,
     IWRSENSOR_PARSED_F *normalized_acc_sensor_data,
     IWRSENSOR_PARSED *normalized_gyr_sensor_data, 
     ANGLES *current_gyro,
     RINGBUFFER *ringbuffer_acc_roll,
-    float *current_acc_roll){
+    float *current_acc_roll) {
 
     float ret_val;
+    float current_roll_val = *current_roll;
+    float current_acc_roll_val = *current_acc_roll;
 
     //Filter Acc Data
-    ringbuffer_acc_roll.measures[ringbuffer_acc_roll.pointer] = atan2(	
-            sqrt(normalized_acc_sensor_data.x * normalized_acc_sensor_data.x + 
-            normalized_acc_sensor_data.z * normalized_acc_sensor_data.z),
-            normalized_acc_sensor_data.y) / M_PI; 
+    ringbuffer_acc_roll->measures[ringbuffer_acc_roll->pointer] = atan2(	
+            sqrt(normalized_acc_sensor_data->x * normalized_acc_sensor_data->x + 
+            normalized_acc_sensor_data->z * normalized_acc_sensor_data->z),
+            normalized_acc_sensor_data->y) / PI; 
 	
     float acc_avg=0.0;
-	
-    for(unsigned int i=0; i < ATTITUDE_SENSOR_RINGBUFFER_SIZE; i++){
 
-        unsigned int current_index = (ringbuffer_acc_roll.pointer + i) 
+    unsigned int i = 0;
+    for(; i < ATTITUDE_SENSOR_RINGBUFFER_SIZE; i++){
+
+        unsigned int current_index = (ringbuffer_acc_roll->pointer + i) 
             % ATTITUDE_SENSOR_RINGBUFFER_SIZE;
 	
         float coefficient = geometric_distribution(
             ATTITUDE_SENSOR_GEOMETRIC_PROBABILITY,i);
 		
-        accAvg += coefficient * ringbuffer_acc_roll.measures[current_index];	
+        acc_avg += coefficient * ringbuffer_acc_roll->measures[current_index];	
     }
 
-    ringbuffer_acc_roll.pointer = ringbuffer_acc_roll.pointer + 1;
+    ringbuffer_acc_roll->pointer = ringbuffer_acc_roll->pointer + 1;
 	
-    if(ringbuffer_acc_roll.pointer == ATTITUDE_SENSOR_RINGBUFFER_SIZE){
-        ringbuffer_acc_roll.pointer = 0;	
+    if(ringbuffer_acc_roll->pointer == ATTITUDE_SENSOR_RINGBUFFER_SIZE){
+        ringbuffer_acc_roll->pointer = 0;	
     }
 		
-    current_acc_roll = acc_avg * 90.0;
+    current_acc_roll_val = acc_avg * 90.0;
 
 	//Add gyro to currentPitch
-    current_roll = current_roll + normalized_gyr_sensor_data.z * 0.5 *(180.0/32768.0);
-    float possible_error_roll = current_acc_roll - currentRoll;
+    current_roll_val = current_roll_val + 
+        normalized_gyr_sensor_data->z * 0.5 * (180.0/32768.0);
+    
+    float possible_error_roll = current_acc_roll_val - current_roll_val;
 
-    if(possible_errorRoll > 1.0) {
-        current_roll = current_roll + 0.05 * possible_error_roll;
+    if(possible_error_roll > 1.0) {
+        current_roll_val = current_roll_val + 0.05 * possible_error_roll;
     } else if(possible_error_roll < -1.0) {
-        current_roll = current_roll + 0.05 * possible_error_roll;
+        current_roll_val = current_roll_val + 0.05 * possible_error_roll;
     }
-    ret_val = current_roll;
+
+    ret_val = current_roll_val;
     return ret_val; 
 }
 
@@ -292,35 +309,35 @@ float calculate_yaw(
     ANGLES *current_gyro,
     float *current_yaw,
     float *current_pitch,
-    float *current_roll) {
+    float *current_roll) {    
 
     static double last_mag_yaw=0.0;
-    IWRSENSOR_PARSED_F mag = normalized_mag_sensor_data;
+    IWRSENSOR_PARSED_F mag = *normalized_mag_sensor_data;
     float ret_val;
     float mag_yaw;
 	
-    float gyr_diff = normalized_gyr_sensor_data.x * 0.2 * (180.0 / 32768.0);
+    float gyr_diff = normalized_gyr_sensor_data->x * 0.2 * (180.0 / 32768.0);
 
     double xh=mag.x;
     double yh=mag.y;
     double length = sqrt(xh * xh + yh * yh);
     xh = xh / length;
     yh = yh / length;
-    magYaw = atan2(xh, yh); 
-    magYaw*= 0.2 * (180.0 / 32768.0);
+    mag_yaw = atan2(xh, yh); 
+    mag_yaw *= 0.2 * (180.0 / 32768.0);
 	
     float mag_diff = mag_yaw - last_mag_yaw;
     float possible_error_yaw = gyr_diff - mag_diff;
 
     if(possible_error_yaw > 1.0){
-        ret_val = current_gyro.yaw + gyr_diff - 0.05 * possible_error_yaw;
+        ret_val = current_gyro->yaw + gyr_diff - 0.05 * possible_error_yaw;
     } else if(possible_error_yaw < -1.0) {
-        ret_val = current_gyro.yaw + gyr_diff + 0.05 * possible_error_yaw;
+        ret_val = current_gyro->yaw + gyr_diff + 0.05 * possible_error_yaw;
     } else {
-        ret_val = current_gyro.yaw + gyr_diff;
+        ret_val = current_gyro->yaw + gyr_diff;
     }
 
-    current_gyro.yaw = ret_val;
+    current_gyro->yaw = ret_val;
     return(ret_val);
 }
 
@@ -341,12 +358,14 @@ void attitude_sensor_calibrate(ATTITUDE_SENSOR *self) {
     int16_t *ptr_mag_max = (int16_t *) &(self->calib_mag_max);
     int16_t *ptr_acc_min = (int16_t *) &(self->calib_acc_min);
     int16_t *ptr_acc_max = (int16_t *) &(self->calib_acc_max);
-	
-    for(int i = 1; i < 250; i++) {//TODO define
+
+    int i = 1;
+    for(; i < 250; i++) {//TODO define
 		
         attitude_sensor_receive(self);
 
-        for(int k = 0; k < 3; k++) {
+        int k = 0;
+        for(; k < 3; k++) {
             if(ptr_mag_min[k] > ptr[k]){
                 ptr_mag_min[k] = ptr[k];
             } else if(ptr_mag_max[k] < ptr[k]){
@@ -354,7 +373,8 @@ void attitude_sensor_calibrate(ATTITUDE_SENSOR *self) {
             }
         }
 
-        for(int k = 3; k < 6; k++) {
+        k = 3;
+        for(; k < 6; k++) {
             if(ptr_acc_min[k - 3] > ptr[k]) {
                 ptr_acc_min[k - 3] = ptr[k];
             } else if(ptr_acc_max[k - 3] < ptr[k]) {
@@ -389,11 +409,14 @@ IWRSENSOR_PARSED attitude_sensor_estimate_gyro_bias(ATTITUDE_SENSOR *self) {
     IWRSENSOR_PARSED ret_val;
     long sums[3]={0,0,0};	
 
-    for(int i = 0; i < 4000; i++) {//TODO define
+    int i = 0;
+    for(; i < 4000; i++) {//TODO define
         attitude_sensor_receive(self);
         //int16_t **ptr = (int16_t **) &parsed; //TODO wieso nicht?
         int16_t *ptr = (int16_t *) &(self->parsed);
-        for(int k = 6; k < 9; k++) {
+
+        int k = 6;
+        for(; k < 9; k++) {
             sums[k - 6] += (long) ptr[k];
         }
     }
@@ -416,13 +439,13 @@ float normalize_value(
 
     float val = (float) *value;
 
-    if(value < min) val = min;
-	if(value > max) val = max;
+    if(value < min) val = (float) *min;
+	if(value > max) val = (float) *max;
 	
 	float ret_val=
-		2.0f*
-		((val - (float)min))/
-		((float)max - (float)min)
+		2.0f *
+		((val - (float) *min))/
+		((float) *max - (float) *min)
 		-1.0f;
 
 	return ret_val;
@@ -450,7 +473,7 @@ IWRSENSOR_PARSED_F normalize_sensor(
     ret_val.x = normalize_value(
         &((*calib_min).x), 
         &((*calib_max).x), 
-        &((*sensor.x)));
+        &((*sensor).x));
 
 	ret_val.y = normalize_value(
         &((*calib_min).y),
@@ -467,17 +490,21 @@ IWRSENSOR_PARSED_F normalize_sensor(
 
 IWRSENSDATA_PARSED attitude_sensor_parse_data(ATTITUDE_SENSOR *self) {
     IWRSENSDATA_PARSED ret;
-    unsigned char *ptr_data = (unsigned char*) &(*self.sensdata);
+    unsigned char *ptr_data = (unsigned char*) &(self->sensdata);
     signed short *ptr_ret = (signed short*) &ret;
-
-    for(int i = 0, j=0; i < 12; i+=2,  j++) { //mag and acc
+    
+    int i = 0;
+    int j = 0;
+    for(; i < 12; i += 2,  j++) { //mag and acc
         unsigned char *lsb = ptr_data + i;
         unsigned char *msb = ptr_data + i + 1;
         *(ptr_ret + j) = (((unsigned short) *msb << 8) | (unsigned short) *lsb);
     }
 
+    i = 18;
+    j = 6;
 //	for(int i = 12, j=6; i < 18; i+=2,  j++) { //high bandwidth gyro
-    for(int i = 18, j=6; i < 24; i+=2,  j++) { //low bandwidth gyro
+    for(; i < 24; i+=2,  j++) { //low bandwidth gyro
         unsigned char *lsb = ptr_data + i;
         unsigned char *msb = ptr_data + i + 1;
         *(ptr_ret + j) = (((unsigned short) *msb << 8) | (unsigned short) *lsb);
@@ -486,7 +513,7 @@ IWRSENSDATA_PARSED attitude_sensor_parse_data(ATTITUDE_SENSOR *self) {
 }
 
 void attitude_sensor_timer_proc(ATTITUDE_SENSOR *self) {
-    if(!self->vuzixConnected){
+    if(!self->vuzix_connected){
         return;
     }
     attitude_sensor_receive(self);
@@ -495,44 +522,44 @@ void attitude_sensor_timer_proc(ATTITUDE_SENSOR *self) {
 	
     IWRSENSOR_PARSED_F normalized_mag_sensor_data =
         normalize_sensor(
-            self->calib_mag_min,
-            self->calib_mag_max, 
-            self->parsed.mag_sensor);
+            &(self->calib_mag_min),
+            &(self->calib_mag_max), 
+            &(self->parsed.mag_sensor));
 	
     IWRSENSOR_PARSED_F normalized_acc_sensor_data = 
         normalize_sensor(
-            self->calib_acc_min, 
-            self->calib_acc_max, 
-            self->parsed.acc_sensor);
+            &(self->calib_acc_min), 
+            &(self->calib_acc_max), 
+            &(self->parsed.acc_sensor));
 
-    IWRSENSOR_PARSED normalizedGyrSensorData = 
+    IWRSENSOR_PARSED normalized_gyr_sensor_data =    
         normalize_gyro(
-            self->bias_gyro, 
-            self->parsed.gyro_sensor);	
+            &(self->bias_gyro), 
+            &(self->parsed.gyro_sensor));	
 	
     ANGLES angles = calculate_angles(
-        self->current_angles,		
-	    normalized_mag_sensor_data, 
-	    normalized_acc_sensor_data, 
-	    normalized_gyr_sensor_data, 
-	    self->current_gyro, 
-	    self->ringbuffer_acc_pitch, 
-	    self->ringbuffer_acc_roll, 
-	    self->current_acc_pitch,
-	    self->current_acc_roll);
+        &(self->current_angles),		
+	    &(normalized_mag_sensor_data), 
+	    &(normalized_acc_sensor_data), 
+	    &(normalized_gyr_sensor_data), 
+	    &(self->current_gyro), 
+	    &(self->ringbuffer_acc_pitch), 
+	    &(self->ringbuffer_acc_roll), 
+	    &(self->current_acc_pitch),
+	    &(self->current_acc_roll));
 
 	pitch = angles.pitch;
 	roll = angles.roll;
 	yaw = angles.yaw;
 	
 	if(self->use_yaw)
-		self->head->angles.yawDeg = angles.yaw - self->zero_angles.yaw; 
+		self->head.yaw_deg = angles.yaw - self->zero_angles.yaw; 
 	
 	if(self->use_pitch)
-		self->head->angles.pitchDeg = angles.pitch - self->zero_angles.pitch; 
+		self->head.pitch_deg = angles.pitch - self->zero_angles.pitch; 
 	
 	if(self->use_roll)
-		self->head->angles.rollDeg = angles.roll - self->zero_angles.roll;
+		self->head.roll_deg = angles.roll - self->zero_angles.roll;
 }
 
 void attitude_sensor_reset_head(ATTITUDE_SENSOR *self) {
