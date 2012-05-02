@@ -32,16 +32,14 @@ either expressed or implied, of the FreeBSD Project.
 #include <linux/types.h>
 #include <linux/input.h>
 #include <linux/hidraw.h>
-
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-
-#include <math.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <string.h>
 
+#include <string.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -199,7 +197,6 @@ float calculate_pitch(
     float *current_acc_pitch) {
 
     float ret_val;
-    float current_pitch_val = *current_pitch;
     float current_acc_pitch_val = *current_acc_pitch;
 
     //Filter Acc Data
@@ -232,21 +229,19 @@ float calculate_pitch(
     current_acc_pitch_val = acc_avg;
 
 	//Add gyro to currentPitch
-    current_pitch_val = current_pitch_val + 
+    *current_pitch = *current_pitch + 
         normalized_gyr_sensor_data->y * (90.0/32768.0);
 
-    float possible_error_pitch = current_acc_pitch_val - current_pitch_val;
+    float possible_error_pitch = current_acc_pitch_val - *current_pitch;
 
     if(possible_error_pitch > 2.0 || possible_error_pitch < -2.0){
-        current_pitch_val = current_pitch_val + 0.05 * possible_error_pitch;
+        *current_pitch = *current_pitch + 0.05 * possible_error_pitch;
     }
 
-    ret_val = current_pitch_val;
+    ret_val = *current_pitch;
     return(ret_val); 
 }
 
-// @todo: is current pitch changed here?
-// possible mistake.
 float calculate_roll(
     float *current_roll,
     IWRSENSOR_PARSED_F *normalized_acc_sensor_data,
@@ -256,8 +251,6 @@ float calculate_roll(
     float *current_acc_roll) {
 
     float ret_val;
-    float current_roll_val = *current_roll;
-    float current_acc_roll_val = *current_acc_roll;
 
     //Filter Acc Data
     ringbuffer_acc_roll->measures[ringbuffer_acc_roll->pointer] = atan2(	
@@ -285,21 +278,21 @@ float calculate_roll(
         ringbuffer_acc_roll->pointer = 0;	
     }
 		
-    current_acc_roll_val = acc_avg * 90.0;
+    *current_acc_roll = acc_avg * 90.0;
 
 	//Add gyro to currentPitch
-    current_roll_val = current_roll_val + 
+    *current_roll = *current_roll + 
         normalized_gyr_sensor_data->z * 0.5 * (180.0/32768.0);
     
-    float possible_error_roll = current_acc_roll_val - current_roll_val;
+    float possible_error_roll = *current_acc_roll - *current_roll;
 
     if(possible_error_roll > 1.0) {
-        current_roll_val = current_roll_val + 0.05 * possible_error_roll;
+        *current_roll = *current_roll + 0.05 * possible_error_roll;
     } else if(possible_error_roll < -1.0) {
-        current_roll_val = current_roll_val + 0.05 * possible_error_roll;
+        *current_roll = *current_roll + 0.05 * possible_error_roll;
     }
 
-    ret_val = current_roll_val;
+    ret_val = *current_roll;
     return ret_val; 
 }
 
@@ -382,7 +375,7 @@ void attitude_sensor_calibrate(ATTITUDE_SENSOR *self) {
             }
         }
 
-        usleep(50000); //50 millis
+        //usleep(50000); //50 millis
 
         printf("calibMin: %i %i %i %i %i %i \n", 
             self->calib_mag_min.x,
@@ -518,8 +511,6 @@ void attitude_sensor_timer_proc(ATTITUDE_SENSOR *self) {
     }
     attitude_sensor_receive(self);
 
-    double yaw, pitch, roll;
-	
     IWRSENSOR_PARSED_F normalized_mag_sensor_data =
         normalize_sensor(
             &(self->calib_mag_min),
@@ -548,10 +539,6 @@ void attitude_sensor_timer_proc(ATTITUDE_SENSOR *self) {
 	    &(self->current_acc_pitch),
 	    &(self->current_acc_roll));
 
-	pitch = angles.pitch;
-	roll = angles.roll;
-	yaw = angles.yaw;
-	
 	if(self->use_yaw)
 		self->head.yaw_deg = angles.yaw - self->zero_angles.yaw; 
 	
