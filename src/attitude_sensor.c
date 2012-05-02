@@ -186,8 +186,6 @@ ANGLES calculate_angles(
  * Side-effects: be aware that this function changes the ringbuffer for
  * the accelerometer in order to filter the data.
  */
-// @todo: is current pitch changed here?
-// possible mistake.
 float calculate_pitch(
     float *current_pitch,
     IWRSENSOR_PARSED_F *normalized_acc_sensor_data,
@@ -203,7 +201,7 @@ float calculate_pitch(
     ringbuffer_acc_pitch->measures[ringbuffer_acc_pitch->pointer] = atan2(
         normalized_acc_sensor_data->x, 
         sqrt(normalized_acc_sensor_data->z * normalized_acc_sensor_data->z + 
-        normalized_acc_sensor_data->y * normalized_acc_sensor_data->y)) / PI; 
+        normalized_acc_sensor_data->y * normalized_acc_sensor_data->y)) / M_PI; 
 
     float acc_avg = 0.0;
 
@@ -256,7 +254,7 @@ float calculate_roll(
     ringbuffer_acc_roll->measures[ringbuffer_acc_roll->pointer] = atan2(	
             sqrt(normalized_acc_sensor_data->x * normalized_acc_sensor_data->x + 
             normalized_acc_sensor_data->z * normalized_acc_sensor_data->z),
-            normalized_acc_sensor_data->y) / PI; 
+            normalized_acc_sensor_data->y) / M_PI; 
 	
     float acc_avg=0.0;
 

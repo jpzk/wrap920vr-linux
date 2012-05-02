@@ -27,6 +27,9 @@ of the authors and should not be interpreted as representing official policies,
 either expressed or implied, of the FreeBSD Project.
 */
 
+#ifndef _ATTITUDE_SENSOR_H
+#define _ATTITUDE_SENSOR_H
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -38,7 +41,7 @@ either expressed or implied, of the FreeBSD Project.
 #define ATTITUDE_SENSOR_RINGBUFFER_SIZE 10 
 #define ATTITUDE_SENSOR_GEOMETRIC_PROBABILITY 0.5
 #define ATTITUDE_SENSOR_CONFIG_FILE "attitudesensor.conf"
-#define PI 3.14159265358979323846f
+#define M_PI 3.14159265358979323846f
 
 #define LOG(string, args...) printf (string"\n", ##args)
 
@@ -182,3 +185,4 @@ float calculate_yaw(
 
 float geometric_distribution(float p, int k);
 
+#endif

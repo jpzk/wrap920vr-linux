@@ -27,8 +27,10 @@ of the authors and should not be interpreted as representing official policies,
 either expressed or implied, of the FreeBSD Project.
 */
 
-#include <stdlib.h>
+#include "attitude_sensor.h"
 
 int main() {
+    ATTITUDE_SENSOR *sensor = attitude_sensor_new();
+    attitude_sensor_delete(sensor);
     return(0);
 }
