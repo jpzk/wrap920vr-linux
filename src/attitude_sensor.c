@@ -118,11 +118,65 @@ HEAD_DIRECTION attitude_sensor_get_head(ATTITUDE_SENSOR *self) {
 }
 
 void attitude_sensor_read_config(ATTITUDE_SENSOR *self) {
-    LOG("Not implemented");
+    FILE *config = fopen(ATTITUDE_SENSOR_CONFIG_FILE, "r")
+
+    fscanf(config, "%i;%i;%i\n", 
+        &(self->bias_gyro.x),
+        &(self->bias_gyro.y),
+        &(self->bias_gyro.z));
+
+    fscanf(config, "%i;%i;%i\n",
+        &(self->calib_mag_min.x),
+        &(self->calib_mag_min.y),
+        &(self->calib_mag_min.z));
+
+    fscanf(config, "%i;%i;%i\n",
+        &(self->calib_mag_max.x),
+        &(self->calib_mag_max.y),
+        &(self->calib_mag_max.z));
+
+    fscanf(config, "%i;%i;%i\n",
+        &(self->calib_acc_min.x),
+        &(self->calib_acc_min.y),
+        &(self->calib_acc_min.z));
+
+    fscanf(config, "%i;%i;%i\n",
+        &(self->calib_acc_max.x),
+        &(self->calib_acc_max.y),
+        &(self->calib_acc_max.z));
+
+    fclose(config);        
 }
 
 void attitude_sensor_write_config(ATTITUDE_SENSOR *self) {
-    LOG("Not implemented");
+    FILE *config = fopen(ATTITUDE_SENSOR_CONFIG_FILE, "w")
+    
+    fprintf(config, "%i;%i;%i\n", 
+        self->bias_gyro.x,
+        self->bias_gyro.y,
+        self->bias_gyro.z);
+
+    fprintf(config, "%i;%i;%i\n",
+        self->calib_mag_min.x,
+        self->calib_mag_min.y,
+        self->calib_mag_min.z);
+
+    fprintf(config, "%i;%i;%i\n",
+        self->calib_mag_max.x,
+        self->calib_mag_max.y,
+        self->calib_mag_max.z);
+
+    fprintf(config, "%i;%i;%i\n",
+        self->calib_acc_min.x,
+        self->calib_acc_min.y,
+        self->calib_acc_min.z);
+
+    fprintf(config, "%i;%i;%i\n",
+        self->calib_acc_max.x,
+        self->calib_acc_max.y,
+        self->calib_acc_max.z);
+
+    fclose(config);        
 }
 
 void attitude_sensor_receive(ATTITUDE_SENSOR *self) {
