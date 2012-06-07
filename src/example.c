@@ -27,10 +27,30 @@ of the authors and should not be interpreted as representing official policies,
 either expressed or implied, of the FreeBSD Project.
 */
 
+#include <stdio.h>
+#include <unistd.h>
+
 #include "attitude_sensor.h"
 
 int main() {
+
+    int max_updates = 1;
+    
+    // opens device connection, calibrates, and writes/reads configuration 
     ATTITUDE_SENSOR *sensor = attitude_sensor_new();
+
+    int update;
+    for(update = 2; update > max_updates; update++) {
+        // fetches sensor information and calculates angles.
+        attitude_sensor_timer_proc(sensor);
+        usleep(50000);
+
+        printf("yaw %f ", sensor->head.yaw_deg);
+        printf("pitch %f ", sensor->head.pitch_deg);
+        printf("roll %f\r\n", sensor->head.roll_deg);
+    }
+
+    // sensor is no longer needed.
     attitude_sensor_delete(sensor);
     return(0);
 }

@@ -118,29 +118,29 @@ HEAD_DIRECTION attitude_sensor_get_head(ATTITUDE_SENSOR *self) {
 }
 
 void attitude_sensor_read_config(ATTITUDE_SENSOR *self) {
-    FILE *config = fopen(ATTITUDE_SENSOR_CONFIG_FILE, "r")
+    FILE *config = fopen(ATTITUDE_SENSOR_CONFIG_FILE, "r");
 
-    fscanf(config, "%i;%i;%i\n", 
+    fscanf(config, "%hd;%hd;%hd\n", 
         &(self->bias_gyro.x),
         &(self->bias_gyro.y),
         &(self->bias_gyro.z));
 
-    fscanf(config, "%i;%i;%i\n",
+    fscanf(config, "%hd;%hd;%hd\n",
         &(self->calib_mag_min.x),
         &(self->calib_mag_min.y),
         &(self->calib_mag_min.z));
 
-    fscanf(config, "%i;%i;%i\n",
+    fscanf(config, "%hd;%hd;%hd\n",
         &(self->calib_mag_max.x),
         &(self->calib_mag_max.y),
         &(self->calib_mag_max.z));
 
-    fscanf(config, "%i;%i;%i\n",
+    fscanf(config, "%hd;%hd;%hd\n",
         &(self->calib_acc_min.x),
         &(self->calib_acc_min.y),
         &(self->calib_acc_min.z));
 
-    fscanf(config, "%i;%i;%i\n",
+    fscanf(config, "%hd;%hd;%hd\n",
         &(self->calib_acc_max.x),
         &(self->calib_acc_max.y),
         &(self->calib_acc_max.z));
@@ -149,29 +149,29 @@ void attitude_sensor_read_config(ATTITUDE_SENSOR *self) {
 }
 
 void attitude_sensor_write_config(ATTITUDE_SENSOR *self) {
-    FILE *config = fopen(ATTITUDE_SENSOR_CONFIG_FILE, "w")
+    FILE *config = fopen(ATTITUDE_SENSOR_CONFIG_FILE, "w");
     
-    fprintf(config, "%i;%i;%i\n", 
+    fprintf(config, "%hd;%hd;%hd\n", 
         self->bias_gyro.x,
         self->bias_gyro.y,
         self->bias_gyro.z);
 
-    fprintf(config, "%i;%i;%i\n",
+    fprintf(config, "%hd;%hd;%hd\n",
         self->calib_mag_min.x,
         self->calib_mag_min.y,
         self->calib_mag_min.z);
 
-    fprintf(config, "%i;%i;%i\n",
+    fprintf(config, "%hd;%hd;%hd\n",
         self->calib_mag_max.x,
         self->calib_mag_max.y,
         self->calib_mag_max.z);
 
-    fprintf(config, "%i;%i;%i\n",
+    fprintf(config, "%hd;%hd;%hd\n",
         self->calib_acc_min.x,
         self->calib_acc_min.y,
         self->calib_acc_min.z);
 
-    fprintf(config, "%i;%i;%i\n",
+    fprintf(config, "%hd;%hd;%hd\n",
         self->calib_acc_max.x,
         self->calib_acc_max.y,
         self->calib_acc_max.z);
@@ -405,8 +405,7 @@ void attitude_sensor_calibrate(ATTITUDE_SENSOR *self) {
     int16_t *ptr_acc_max = (int16_t *) &(self->calib_acc_max);
 
     int i = 1;
-    for(; i < 250; i++) {//TODO define
-		
+    for(; i < 4000; i++) {//TODO define
         attitude_sensor_receive(self);
 
         int k = 0;
@@ -427,8 +426,6 @@ void attitude_sensor_calibrate(ATTITUDE_SENSOR *self) {
             }
         }
 
-        //usleep(50000); //50 millis
-
         printf("calibMin: %i %i %i %i %i %i \n", 
             self->calib_mag_min.x,
             self->calib_mag_min.y,
@@ -444,6 +441,8 @@ void attitude_sensor_calibrate(ATTITUDE_SENSOR *self) {
             self->calib_acc_max.x,
             self->calib_acc_max.y,
             self->calib_acc_max.z);
+
+        usleep(5000);            
     }
 }
 
@@ -460,10 +459,14 @@ IWRSENSOR_PARSED attitude_sensor_estimate_gyro_bias(ATTITUDE_SENSOR *self) {
         //int16_t **ptr = (int16_t **) &parsed; //TODO wieso nicht?
         int16_t *ptr = (int16_t *) &(self->parsed);
 
+        usleep(5000);
+
         int k = 6;
         for(; k < 9; k++) {
             sums[k - 6] += (long) ptr[k];
+            printf("%hd ", ptr[k]); 
         }
+        printf("\r\n");
     }
 
     // calculate average
